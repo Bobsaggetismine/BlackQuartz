@@ -1,0 +1,23 @@
+build/
+premake5.exe
+.vs
+.vscode
+Makefile
+# Visual Studio project/solution (optional: ignore if you generate via CMake/Premake)
+*.sln
+*.vcxproj
+*.vcxproj.filters
+*.vcxproj.user
+*.vcxproj.vcxproj.filters
+*.vcxproj.vcxproj.user
+# -------------------------------
+# Visual Studio (IDE state + user-specific)
+# -------------------------------
+.vs/
+*.suo
+*.user
+*.userosscache
+*.sln.docstates
+*.VC.db
+*.VC.VC.opendb
+*.rsuser

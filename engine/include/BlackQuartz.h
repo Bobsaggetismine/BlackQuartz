@@ -1,0 +1,5 @@
+
+namespace bq
+{
+    int fuckit();
+}
