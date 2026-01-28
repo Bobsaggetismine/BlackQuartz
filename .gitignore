@@ -6,6 +6,7 @@ Makefile
 premake
 # Visual Studio project/solution (optional: ignore if you generate via CMake/Premake)
 *.sln
+*.slnx
 *.vcxproj
 *.vcxproj.filters
 *.vcxproj.user
