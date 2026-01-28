@@ -14,7 +14,7 @@ int main(int argc, char** argv)
 
 TEST_CASE("TestNoFile")
 {
-	bq::Book book("folderdoesntexist\filedoesntexist.txt");
+	bq::Book book("folderdoesntexist/filedoesntexist.txt");
 	CHECK(book.getSize() == 0);
 }
 TEST_CASE("TestAllLoaded")

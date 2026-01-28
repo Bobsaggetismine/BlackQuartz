@@ -2,6 +2,7 @@
 
 #include "surge.h"
 #include "Text.h"
+#include "Logger.h"
 #include <string>
 #include <fstream>
 #include <print>

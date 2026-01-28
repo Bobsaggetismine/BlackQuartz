@@ -4,6 +4,7 @@ std::string bq::Book::loadGamesFromFile(const std::string& source)
 {
     std::ifstream t(source);
     if (!t.is_open()) {
+        bq::Logger::Warn("Could not load book file: {}", source);
         return "";
     }
     std::stringstream buffer;
