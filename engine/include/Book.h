@@ -21,7 +21,7 @@ namespace bq {
         std::string m_Delimeter = "\n";
 
         std::string loadGamesFromFile(const std::string& source);
-        void parseGamesToGameEntries(const std::vector<std::string>& games);
+        void parseGamesToGameEntries(std::vector<std::string>& games);
         void shuffleGames();
         std::optional<int> parseLastToken(const std::string& token);
         std::vector<std::string> resolveTokensToMoves(Position& p, std::vector<std::string> tokens);

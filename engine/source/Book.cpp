@@ -9,13 +9,15 @@ std::string bq::Book::loadGamesFromFile(const std::string& source)
     std::stringstream buffer;
     buffer << t.rdbuf();
     std::string file_contents = buffer.str();
+    
     return file_contents;
 }
 
-void bq::Book::parseGamesToGameEntries(const std::vector<std::string>& games)
+void bq::Book::parseGamesToGameEntries(std::vector<std::string>& games)
 {
-    for (auto& game : games) {
+    for (std::string& game : games) {
         if (game.empty()) continue;
+        bq::text::trim_inplace(game);
         Position p("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1");
         
         auto tokens = bq::text::split(game, " ");

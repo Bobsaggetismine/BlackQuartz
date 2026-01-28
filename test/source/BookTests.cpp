@@ -14,7 +14,7 @@ int main(int argc, char** argv)
 
 TEST_CASE("TestNoFile")
 {
-	bq::Book book("folderdoesntexist/filedoesntexist.txt");
+	bq::Book book("folderdoesntexist\filedoesntexist.txt");
 	CHECK(book.getSize() == 0);
 }
 TEST_CASE("TestAllLoaded")
@@ -145,11 +145,9 @@ TEST_CASE("TestPositionHistoryOutOfSyncReturnsNull")
 	bq::Book book("res/books/testbook.txt");
 	Position p("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1");
 
-	// advance position but DON'T call book.addMove
 	Move m("e2e4");
 	p.play<WHITE>(m);
 
-	// book still thinks we're at ply 0
 	Move bm = book.getBookMove<BLACK>(p);
-	CHECK(bm.is_null()); // or == Move("a1a1") depending on your sentinel
+	CHECK(bm.is_null());
 }
