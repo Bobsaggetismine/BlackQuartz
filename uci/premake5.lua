@@ -1,4 +1,4 @@
-project "uci"
+project "Uci"
 	kind "ConsoleApp"
 	language "C++"
 	cppdialect "C++23"

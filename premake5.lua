@@ -1,6 +1,6 @@
-workspace "bq_game_lib"
+workspace "BlackQuartz"
     architecture "x64"
-    startproject "sandbox"
+    startproject "Test"
 
     outputdir = "%{cfg.buildcfg}-%{cfg.system}-%{cfg.architecture}"
     
@@ -10,8 +10,8 @@ workspace "bq_game_lib"
         "Release"
     }    
     group "Core"
-        include "engine"
-        include "test"
-        include "uci"
+        include "Engine"
+        include "Test"
+        include "Uci"
     group ""
 

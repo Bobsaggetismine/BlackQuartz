@@ -64,7 +64,6 @@ namespace bq {
                 MoveList<Us> moves(p);
                 for (const auto& mv : moves) {
                     if (mv.str() == next) {
-                        
                         return mv;
                     }
                 }
