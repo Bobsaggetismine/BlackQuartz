@@ -10,12 +10,13 @@ project "engine"
         files
         {
             "./include/**.h",
+            "../vendor/surge/source/**.cpp",
             "source/**.cpp"
         }
         includedirs
         {
             "include",
-            "../vendor/include"
+            "../vendor/surge/include"
         }
         filter "system:windows"
             systemversion "latest"

@@ -20,7 +20,8 @@ project "test"
 	{
 		"include",
 		"../engine/include",
-		"../vendor/include"
+		"../vendor/surge/include",
+		"../vendor/doctest/include"
 	}
 	filter "system:windows"
 		systemversion "latest"

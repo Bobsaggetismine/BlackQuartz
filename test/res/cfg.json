@@ -1,0 +1,6 @@
+{
+    "time_per_turn" : 10000,
+    "player_one" : true,
+    "player_two" : false,
+    "auto_restart" : true
+}

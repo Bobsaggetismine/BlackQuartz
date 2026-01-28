@@ -3,6 +3,7 @@ premake5.exe
 .vs
 .vscode
 Makefile
+premake
 # Visual Studio project/solution (optional: ignore if you generate via CMake/Premake)
 *.sln
 *.vcxproj

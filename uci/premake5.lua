@@ -20,7 +20,7 @@ project "uci"
 	{
 		"include",
 		"../engine/include",
-		"../vendor/include"
+		"../vendor/surge/include"
 	}
 	filter "system:windows"
 		systemversion "latest"
