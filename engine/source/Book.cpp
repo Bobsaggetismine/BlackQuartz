@@ -1,4 +1,4 @@
-#include "Book.h"
+﻿#include "Book.h"
 
 std::string bq::Book::loadGamesFromFile(const std::string& source)
 {
@@ -30,6 +30,7 @@ void bq::Book::parseGamesToGameEntries(std::vector<std::string>& games)
         auto result = parseLastToken(last_token);
         if (!result)
         {
+            bq::Logger::Warn("Could parse final token for game: {}", tokens);
             continue;
         }
         tokens.pop_back();
@@ -57,32 +58,54 @@ std::optional<int> bq::Book::parseLastToken(const std::string& token)
     return std::nullopt;
 }
 
-std::vector<std::string> bq::Book::resolveTokensToMoves(Position& p, std::vector<std::string> tokens)
+std::vector<std::string>
+bq::Book::resolveTokensToMoves(Position& p, const std::vector<std::string>& tokens)
 {
     std::vector<std::string> updated_tokens;
-    for (auto& token : tokens) {
-        
-        if (p.turn() == WHITE) {
+    updated_tokens.reserve(tokens.size());
+
+    for (const auto& token : tokens)
+    {
+        bool matched = false;
+
+        if (p.turn() == WHITE)
+        {
             MoveList<WHITE> moves(p);
-            for (Move move : moves) {
-                if (get_notation(p, move) == token) {
+            for (Move move : moves)
+            {
+                if (move.str() == token)
+                {
                     updated_tokens.push_back(move.str());
                     p.play<WHITE>(move);
+                    matched = true;
                     break;
                 }
             }
         }
-        else {
+        else
+        {
             MoveList<BLACK> moves(p);
-            for (Move move : moves) {
-                if (get_notation(p, move) == token) {
+            for (Move move : moves)
+            {
+                if (move.str() == token)
+                {
                     updated_tokens.push_back(move.str());
                     p.play<BLACK>(move);
+                    matched = true;
                     break;
                 }
             }
         }
+
+        // 🚨 fail fast on invalid token
+        if (!matched)
+        {
+            bq::Logger::Warn("Invalid book token '{}' - skipping game: {}", token, tokens);
+            MoveList<WHITE> moves(p);
+            return {};
+        }
     }
+
     return updated_tokens;
 }
 

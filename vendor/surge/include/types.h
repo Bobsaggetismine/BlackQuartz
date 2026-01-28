@@ -360,8 +360,36 @@ public:
         move = (from << 6) | to;
     }
     inline std::string str() const {
-        std::string str = (SQSTR[from()]) + std::string(SQSTR[to()]);
-        return str;
+        Square f = from();
+        Square t = to();
+
+        // --- UCI castling: always king moves to g/c file ---
+        if (is_castling()) {
+            // Your generator appears to encode OO/OOO as king->rookSquare (e1h1/e1a1).
+            // Normalize to UCI king destination squares.
+            if (flags() == OO) {
+                if (f == e1) t = g1;
+                else if (f == e8) t = g8;
+            } else { // OOO
+                if (f == e1) t = c1;
+                else if (f == e8) t = c8;
+            }
+        }
+
+        std::string s = std::string(SQSTR[f]) + std::string(SQSTR[t]);
+
+        // --- UCI promotion suffix ---
+        if (is_promotion()) {
+            switch (promotion()) {
+                case KNIGHT: s += 'n'; break;
+                case BISHOP: s += 'b'; break;
+                case ROOK:   s += 'r'; break;
+                case QUEEN:  s += 'q'; break;
+                default: break; // should never happen
+            }
+        }
+
+        return s;
     }
     std::string str_d();
     inline Move(Square from, Square to, MoveFlags flags):

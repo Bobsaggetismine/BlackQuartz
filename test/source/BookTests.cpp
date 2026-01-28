@@ -19,8 +19,8 @@ TEST_CASE("TestNoFile")
 }
 TEST_CASE("TestAllLoaded")
 {
-	bq::Book book("res/books/book2.txt");
-	CHECK(book.getSize() == 7751);
+	bq::Book book("res/books/mainbook.txt");
+	CHECK(book.getSize() == 7748);
 }
 TEST_CASE("TestNoMoveFound")
 {
@@ -30,13 +30,13 @@ TEST_CASE("TestNoMoveFound")
 }
 TEST_CASE("TestMoveFound")
 {
-	bq::Book book("res/books/book2.txt");
+	bq::Book book("res/books/mainbook.txt");
 	Position p("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1");
 	CHECK(book.getBookMove<WHITE>(p) != Move("a1a1"));
 }
 TEST_CASE("TestWrongColor")
 {
-	bq::Book book("res/books/book2.txt");
+	bq::Book book("res/books/mainbook.txt");
 	Position p("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1");
 	CHECK(book.getBookMove<BLACK>(p) == Move("a1a1"));
 }
@@ -112,7 +112,7 @@ static bool is_legal(Position& p, Move m)
 
 TEST_CASE("TestBookMoveIsLegal")
 {
-	bq::Book book("res/books/book2.txt");
+	bq::Book book("res/books/mainbook.txt");
 	Position p("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1");
 
 	Move m = book.getBookMove<WHITE>(p);
@@ -150,4 +150,9 @@ TEST_CASE("TestPositionHistoryOutOfSyncReturnsNull")
 
 	Move bm = book.getBookMove<BLACK>(p);
 	CHECK(bm.is_null());
+}
+TEST_CASE("InvalidTokenSkipsEntireGame")
+{
+	bq::Book book("res/books/testbook_invalidtoken.txt");
+	CHECK(book.getSize() == 2);
 }

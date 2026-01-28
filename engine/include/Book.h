@@ -25,7 +25,7 @@ namespace bq {
         void parseGamesToGameEntries(std::vector<std::string>& games);
         void shuffleGames();
         std::optional<int> parseLastToken(const std::string& token);
-        std::vector<std::string> resolveTokensToMoves(Position& p, std::vector<std::string> tokens);
+        std::vector<std::string> resolveTokensToMoves(Position& p, const std::vector<std::string>& tokens);
 
     public:
 
