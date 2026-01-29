@@ -11,6 +11,9 @@
 #include <print>
 
 #if defined(PLATFORM_WINDOWS)
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
 #include <Windows.h>
 #elif defined(PLATFORM_LINUX)
 #include <unistd.h> // isatty, fileno

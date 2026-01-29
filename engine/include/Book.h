@@ -50,7 +50,6 @@ namespace bq {
 
                 if (m_MoveHistory.size() >= game.moves.size()) continue;
 
-                // prefix match
                 bool match = true;
                 for (size_t i = 0; i < m_MoveHistory.size(); ++i) {
                     if (m_MoveHistory[i].str() != game.moves[i]) {
@@ -60,7 +59,6 @@ namespace bq {
                 }
                 if (!match) continue;
              
-                // find that next move in legal moves and return immediately
                 const auto& next = game.moves[m_MoveHistory.size()];
                 MoveList<Us> moves(p);
                 for (const auto& mv : moves) {
