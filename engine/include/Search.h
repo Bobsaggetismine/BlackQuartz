@@ -4,26 +4,22 @@
 #include "Evaluation.h"
 #include "TranspositionTable.h"
 #include "MoveOrdering.h"
+
 #include <array>
 #include <chrono>
 #include <atomic>
 #include <algorithm>
-#include <cstdlib>
+#include <cstdlib> // std::abs(int)
 namespace bq {
+
 	struct PVLine {
 		static constexpr int MAX = 64;
 		std::array<Move, MAX> m{};
 		int len = 0;
 
 		void clear() { len = 0; }
-
-		void set(Move first, const PVLine& child) {
-			m[0] = first;
-			len = 1;
-			for (int i = 0; i < child.len && len < MAX; ++i)
-				m[len++] = child.m[i];
-		}
 	};
+
 	struct SearchStats {
 		int qDepthReached = 0;
 		long long ellapsedTime = 0;
@@ -36,6 +32,7 @@ namespace bq {
 		static constexpr int MAX_PV = 64;
 		std::array<Move, MAX_PV> pv{};
 		int pvLen = 0;
+
 		void reset()
 		{
 			depth = 0;
@@ -48,14 +45,16 @@ namespace bq {
 			pvLen = 0;
 		}
 	};
+
 	constexpr int pieceValues[NPIECE_TYPES] = {
-	100,
-	300,
-	305,
-	500,
-	900,
-	2000000
+		100,
+		300,
+		305,
+		500,
+		900,
+		2000000
 	};
+
 	class Search {
 
 		bq::TranspositionTable m_transpositionTable;
@@ -63,15 +62,16 @@ namespace bq {
 		std::atomic<bool> m_stopping{ false };
 		int m_maxSelDepth;
 		const int m_checkmateScore = 100000;
+
 	public:
 
 		Search(int maxSelDepth)
 			: m_maxSelDepth(maxSelDepth)
 		{
-
 		}
 
 		void signalStop() { m_stopping.store(true, std::memory_order_relaxed); }
+
 		static bool isLegalRt(Position& p, Color stm, Move m) {
 			if (stm == WHITE) {
 				MoveList<WHITE> ml(p);
@@ -97,8 +97,20 @@ namespace bq {
 			Position tmp = root;
 			Color stm = RootUs;
 
+			// repetition / cycle guard
+			std::array<std::uint64_t, PVLine::MAX + 1> seen{};
+			int seenLen = 0;
+
 			for (int ply = 0; ply < maxPlies && out.len < PVLine::MAX; ++ply) {
-				auto e = m_transpositionTable.lookup(tmp.get_hash());
+				const std::uint64_t h = tmp.get_hash();
+
+				// break on repetition/cycle
+				for (int i = 0; i < seenLen; ++i) {
+					if (seen[i] == h) return out;
+				}
+				seen[seenLen++] = h;
+
+				auto e = m_transpositionTable.lookup(h);
 				if (!e.valid || e.bestMove.is_null()) break;
 
 				Move m = e.bestMove;
@@ -111,6 +123,7 @@ namespace bq {
 
 			return out;
 		}
+
 		template <Color us>
 		SearchStats initiateIterativeSearch(Position& p, int depth)
 		{
@@ -125,18 +138,16 @@ namespace bq {
 			return m_searchStats;
 		}
 
-
 	private:
-		
+
 		template <Color us>
 		void initiateSearch(Position& p, int depth)
 		{
 			auto start = std::chrono::steady_clock::now();
 
-			PVLine pv;
 			int score = pvs<us>(p, 0, depth,
 				-m_checkmateScore, m_checkmateScore,
-				false, pv);
+				false);
 
 			auto stop = std::chrono::steady_clock::now();
 			auto duration = std::chrono::duration_cast<std::chrono::microseconds>(stop - start);
@@ -146,9 +157,8 @@ namespace bq {
 			if (m_stopping.load(std::memory_order_relaxed))
 				return;
 
-			PVLine ttPv = extractPvFromTt<us>(p, depth); 
-			if (ttPv.len > pv.len)
-				pv = ttPv;
+			// PV is extracted from TT (no PV plumbing through search)
+			PVLine pv = extractPvFromTt<us>(p, depth);
 
 			m_searchStats.depth = depth;
 			m_searchStats.score = score;
@@ -161,19 +171,19 @@ namespace bq {
 			m_searchStats.mateFound = (std::abs(score) >= m_checkmateScore - 256);
 		}
 
-
-
 		template <Color us>
-		int quiescence(Position& p, int ply, int q_depth, int alpha, int beta, PVLine& pv)
+		int quiescence(Position& p, int ply, int q_depth, int alpha, int beta)
 		{
-			pv.clear();
-			m_searchStats.nodesSearched++;
-			if (m_stopping.load(std::memory_order_relaxed)) {
-				pv.clear();
+			auto& stats = m_searchStats;
+			++stats.nodesSearched;
+
+			if (m_stopping.load(std::memory_order_relaxed))
 				return alpha;
-			}
-			m_searchStats.qDepthReached = std::max(q_depth, m_searchStats.qDepthReached);
-			int stand_pat = bq::Evaluation::ScoreBoard<us>(p);
+
+			if (q_depth > stats.qDepthReached)
+				stats.qDepthReached = q_depth;
+
+			const int stand_pat = bq::Evaluation::ScoreBoard<us>(p);
 
 			if (stand_pat >= beta)
 				return beta;
@@ -184,44 +194,66 @@ namespace bq {
 			if (q_depth >= m_maxSelDepth)
 				return alpha;
 
-			MoveList<us> moves(p);
 			const bool inCheck = p.in_check<us>();
-			if (moves.size() == 0) {
-				if (inCheck) return -m_checkmateScore + ply;
-				return 0;
+
+			// In check: must consider all evasions (quiet king moves, blocks, etc.)
+			if (inCheck) {
+				MoveList<us> moves(p);
+
+				if (moves.size() == 0)
+					return -m_checkmateScore + ply;
+
+				for (const Move move : moves)
+				{
+					p.play<us>(move);
+
+					const int score = -quiescence<~us>(
+						p,
+						ply + 1,
+						q_depth + 1,
+						-beta,
+						-alpha
+					);
+
+					p.undo<us>(move);
+
+					if (score >= beta)
+						return beta;
+
+					if (score > alpha)
+						alpha = score;
+				}
+
+				return alpha;
 			}
 
-			for (Move& move : moves)
+			// Not in check: only generate tacticals (captures, promotions, ep)
+			TacticalMoveList<us> moves(p);
+
+			// Not in check and no tacticals: stand-pat result already in alpha
+			if (moves.size() == 0)
+				return alpha;
+
+			for (const Move move : moves)
 			{
-				bool is_capture = move.is_capture();
-				bool is_promotion = move.is_promotion();
-				if (!inCheck) {
-					if (!is_capture && !is_promotion)
-					{
-						continue;
-					}
-				}
-				if (is_capture)
-				{
-					Piece victim = p.at(move.to());
-					if (victim != NO_PIECE)
-					{
-						int gain = pieceValues[type_of(victim)];
+				// Optional (same logic you already had): cheap delta pruning for captures
+				if (move.is_capture()) {
+					const Piece victim = p.at(move.to());
+					if (victim != NO_PIECE) {
+						const int gain = pieceValues[type_of(victim)];
 						if (stand_pat + gain + 100 < alpha)
 							continue;
 					}
 				}
 
 				p.play<us>(move);
-				
-				PVLine child;
-				int score = -quiescence<~us>(
+
+				const int score = -quiescence<~us>(
 					p,
 					ply + 1,
 					q_depth + 1,
 					-beta,
-					-alpha,
-					child
+					-alpha
 				);
 
 				p.undo<us>(move);
@@ -229,30 +261,30 @@ namespace bq {
 				if (score >= beta)
 					return beta;
 
-				if (score > alpha) {
+				if (score > alpha)
 					alpha = score;
-					pv.set(move, child);
-				}
 			}
 
 			return alpha;
 		}
 
+
 		template <Color us>
-		int pvs(Position& p, int ply, int depth, int alpha, int beta, bool reduced, PVLine& pv)
+		int pvs(Position& p, int ply, int depth, int alpha, int beta, bool reduced)
 		{
-			pv.clear();
-			m_searchStats.nodesSearched++;
+			auto& stats = m_searchStats;
+			stats.nodesSearched++;
 			if (m_stopping.load(std::memory_order_relaxed)) {
-				pv.clear();
 				return alpha;
 			}
 
-			int orig_alpha = alpha;
-			int orig_beta = beta;
+			const int orig_alpha = alpha;
+			const int orig_beta = beta;
 
 			if (depth <= 0)
-				return quiescence<us>(p, ply, 0, alpha, beta, pv);
+				return quiescence<us>(p, ply, 0, alpha, beta);
+
+
 
 			auto tt_lookup = m_transpositionTable.lookup(p.get_hash());
 
@@ -268,8 +300,7 @@ namespace bq {
 						: tt_score + ply;
 				}
 
-				bool pvNodeTT = (beta - alpha) > 1;
-				if (tt_lookup.flag == tt_flag::EXACT && !pvNodeTT)
+				if (tt_lookup.flag == tt_flag::EXACT)
 					return tt_score;
 
 				if (tt_lookup.flag == tt_flag::LOWERBOUND)
@@ -280,14 +311,14 @@ namespace bq {
 				if (alpha >= beta)
 					return alpha;
 			}
+			const bool usInCheck = p.in_check<us>();
+			const bool pvNode = (beta - alpha) > 1;
 
-			bool pvNode = (beta - alpha) > 1;
-
-			if (!pvNode && depth <= 2 && !p.in_check<us>()) {
+			if (!pvNode && depth <= 2 && !usInCheck) {
 				int eval = bq::Evaluation::ScoreBoard<us>(p);
 
 				if (eval + 220 * depth <= alpha) {
-					return quiescence<us>(p, ply, 0, alpha, beta, pv);
+					return quiescence<us>(p, ply, 0, alpha, beta);
 				}
 
 				if (eval - 150 * depth >= beta) {
@@ -300,16 +331,15 @@ namespace bq {
 
 			if (moves.size() == 0)
 			{
-				if (p.in_check<us>()) return -m_checkmateScore + ply;
+				if (usInCheck) return -m_checkmateScore + ply;
 				else                  return 0;
 			}
 
-			PVLine bestLine;
-			int bestScore = -m_checkmateScore - 1;
 			bool haveBest = false;
-
-			int moveNum = 0;
+			int bestScore = -m_checkmateScore - 1;
 			Move bestMove{};
+			const std::uint64_t key = p.get_hash();
+			int moveNum = 0;
 			for (Move& move : moves)
 			{
 				p.play<us>(move);
@@ -319,92 +349,76 @@ namespace bq {
 					move_reduct = 1;
 
 				int score = 0;
-				PVLine childPV;
 
 				if (moveNum == 0 || p.in_check<~us>())
 				{
-					score = -pvs<~us>(p, ply + 1, (depth - 1), -beta, -alpha, reduced, childPV);
+					score = -pvs<~us>(p, ply + 1, (depth - 1), -beta, -alpha, reduced);
 				}
 				else
 				{
-					PVLine tmp;
 					score = -pvs<~us>(p, ply + 1, (depth - 1) - move_reduct,
-						-alpha - 1, -alpha, move_reduct > 0, tmp);
-					childPV = tmp;
+						-alpha - 1, -alpha, move_reduct > 0);
 
 					if (score > alpha && move_reduct > 0) {
-						PVLine confirm;
-						score = -pvs<~us>(p, ply + 1, depth - 1, -alpha - 1, -alpha, false, confirm);
-						childPV = confirm;
+						score = -pvs<~us>(p, ply + 1, depth - 1, -alpha - 1, -alpha, false);
 					}
 
 					if (score > alpha && score < beta) {
-						PVLine full;
-						score = -pvs<~us>(p, ply + 1, depth - 1, -beta, -alpha, false, full);
-						childPV = full;
+						score = -pvs<~us>(p, ply + 1, depth - 1, -beta, -alpha, false);
 					}
 				}
 
 				p.undo<us>(move);
 
 				if (m_stopping.load(std::memory_order_relaxed)) {
-					pv.clear();
 					return alpha;
 				}
 
 				if (!haveBest || score > bestScore) {
 					haveBest = true;
 					bestScore = score;
-					bestLine.set(move, childPV);
+					bestMove = move;
 				}
 
 				if (score > alpha)
 				{
 					alpha = score;
 					bestMove = move;
-					pv.set(move, childPV);
 				}
 
 				if (score >= beta) {
 					tt_entry e;
 					e.valid = true;
+
 					int s = score;
 					if (std::abs(s) >= m_checkmateScore - 1000)
 						s = (s > 0) ? s + ply : s - ply;
+
 					e.score = s;
 					e.depth = depth;
 					e.flag = tt_flag::LOWERBOUND;
 					e.bestMove = move;
-					m_transpositionTable.insert(p.get_hash(), e);
+
+					m_transpositionTable.insert(key, e);
 					return score;
 				}
 
 				++moveNum;
 			}
 
-			if (pv.len == 0 && haveBest) {
-				pv = bestLine;
-			}
-
 			tt_entry entry;
 			entry.valid = true;
-			int storeScore = alpha;
 
+			entry.bestMove = haveBest ? bestMove : Move{};
+
+			int storeScore = alpha;
 			if (std::abs(storeScore) >= m_checkmateScore - 1000)
 			{
 				storeScore = (storeScore > 0)
 					? storeScore + ply
 					: storeScore - ply;
 			}
-			if (bestMove.is_null() && haveBest && bestLine.len > 0) {
-				bestMove = bestLine.m[0];
-			}
 
-			if (pv.len == 0 && haveBest) {
-				pv = bestLine;
-				if (bestMove.is_null() && pv.len > 0) bestMove = pv.m[0];
-			}
-			entry.bestMove = bestMove;
 			entry.score = storeScore;
 			entry.depth = depth;
 
@@ -412,9 +426,8 @@ namespace bq {
 			else if (alpha >= orig_beta) entry.flag = tt_flag::LOWERBOUND;
 			else entry.flag = tt_flag::EXACT;
 
-			m_transpositionTable.insert(p.get_hash(), entry);
+			m_transpositionTable.insert(key, entry);
 			return alpha;
 		}
-
 	};
 }
