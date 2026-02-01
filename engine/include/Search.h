@@ -140,24 +140,90 @@ namespace bq {
 
 	private:
 
-		template <Color us> 
-		void initiateSearch(Position& p, int depth) 
+		template <Color us>
+		void initiateSearch(Position& p, int depth)
 		{
-			auto start = std::chrono::steady_clock::now();
+			// Aspiration tuning knobs
+			constexpr int ASP_START = 35;     // centipawns-ish
+			constexpr int ASP_GROW = 2;      // multiply delta by this on each fail
+			constexpr int ASP_TRIES = 6;      // max retries before full window
+			constexpr int MATE_GUARD = 2000;  // if score is near mate, skip aspiration
 
-			int score = pvs<us>(p, 0, depth,
-				-m_checkmateScore, m_checkmateScore,
-				false);
+			const int INF = m_checkmateScore;
 
-			auto stop = std::chrono::steady_clock::now();
-			auto duration = std::chrono::duration_cast<std::chrono::microseconds>(stop - start);
+			// Use previous iteration score as the center (only if meaningful)
+			const int prevScore = m_searchStats.score;
 
-			m_searchStats.ellapsedTime += duration.count();
+			bool useAsp =
+				(depth >= 2) &&
+				(std::abs(prevScore) < INF - MATE_GUARD);
 
-			if (m_stopping.load(std::memory_order_relaxed))
-				return;
+			int alpha = -INF;
+			int beta = +INF;
 
-			// PV is extracted from TT (no PV plumbing through search)
+			int center = prevScore;
+			int delta = ASP_START;
+
+			if (useAsp) {
+				alpha = std::max(-INF, center - delta);
+				beta = std::min(+INF, center + delta);
+				if (alpha >= beta) { alpha = -INF; beta = +INF; useAsp = false; }
+			}
+
+			int score = 0;
+
+			for (int attempt = 0; attempt < (useAsp ? ASP_TRIES : 1); ++attempt)
+			{
+				const auto start = std::chrono::steady_clock::now();
+
+				score = pvs<us>(p, 0, depth, alpha, beta, false);
+
+				const auto stop = std::chrono::steady_clock::now();
+				const auto duration = std::chrono::duration_cast<std::chrono::microseconds>(stop - start);
+				m_searchStats.ellapsedTime += duration.count();
+
+				if (m_stopping.load(std::memory_order_relaxed))
+					return;
+
+				if (!useAsp)
+					break;
+
+				// Fail-low / fail-high: widen and retry
+				if (score <= alpha || score >= beta)
+				{
+					delta *= ASP_GROW;
+
+					// If we've basically widened to "infinite", just do full window once
+					if (delta >= INF) {
+						alpha = -INF;
+						beta = +INF;
+						useAsp = false;
+						// loop continues; next iteration will run full window exactly once
+						continue;
+					}
+
+					alpha = std::max(-INF, center - delta);
+					beta = std::min(+INF, center + delta);
+					continue;
+				}
+
+				// Success: score inside window
+				break;
+			}
+
+			// If we fell back to full window, run it once (when useAsp was disabled by widening)
+			if (!useAsp && (alpha != -INF || beta != +INF)) {
+				const auto start = std::chrono::steady_clock::now();
+				score = pvs<us>(p, 0, depth, -INF, +INF, false);
+				const auto stop = std::chrono::steady_clock::now();
+				const auto duration = std::chrono::duration_cast<std::chrono::microseconds>(stop - start);
+				m_searchStats.ellapsedTime += duration.count();
+
+				if (m_stopping.load(std::memory_order_relaxed))
+					return;
+			}
+
+			// PV from TT (as you already do)
 			PVLine pv = extractPvFromTt<us>(p, depth);
 
 			m_searchStats.depth = depth;
@@ -168,8 +234,9 @@ namespace bq {
 				m_searchStats.pv[i] = pv.m[i];
 
 			m_searchStats.selectedMove = (pv.len > 0) ? pv.m[0] : Move{};
-			m_searchStats.mateFound = (std::abs(score) >= m_checkmateScore - 256);
+			m_searchStats.mateFound = (std::abs(score) >= INF - 256);
 		}
+
 
 		template <Color us>
 		int quiescence(Position& p, int ply, int q_depth, int alpha, int beta) 
@@ -331,7 +398,8 @@ namespace bq {
 			}
 
 			MoveList<us> moves(p);
-			orderMoves<us>(p, moves, m_transpositionTable, depth > 1);
+			const Move ttMove = (tt_lookup.valid ? tt_lookup.bestMove : Move{});
+			orderMoves<us>(moves,ttMove);
 
 			if (moves.size() == 0)
 			{

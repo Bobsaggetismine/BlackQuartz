@@ -1,6 +1,6 @@
 #pragma once
+#include <array>
 #include <algorithm>
-#include <vector>
 #include <cstdint>
 
 #include "surge.h"
@@ -8,55 +8,53 @@
 
 namespace bq {
 
-    template <Color Us>
-    static inline int moveOrderingScore(const Position& p, const Move m, const Move ttMove, bool use_tt)
-    {
-        int score = 0;
+    struct ScoredMove {
+        int  score;
+        Move move;
+    };
 
-        if (use_tt && m == ttMove)
-            score += 1'000'000;
+    template <Color Us>
+    static inline int scoreMove(Move m, Move ttMove)
+    {
+        int s = 0;
+
+        if (!ttMove.is_null() && m == ttMove)
+            s += 1'000'000;
+
+        if (m.is_promotion())
+            s += 200'000;
 
         if (m.is_capture())
-            score += 100'000;
+            s += 100'000;
+        else if (m.flags() != QUIET)
+            s += 10'000;
 
-        if (m.flags() != QUIET)
-            score += 10'000;
-
-        return score;
+        return s;
     }
 
     template <Color Us>
-    void orderMoves(Position& p, MoveList<Us>& moves, const bq::TranspositionTable& tt, bool use_tt)
+    inline void orderMoves(MoveList<Us>& moves, Move ttMove = Move{})
     {
-        Move ttMove{};
-        if (use_tt) {
-            auto e = tt.lookup(p.get_hash());
-            if (e.valid) ttMove = e.bestMove;
+        Move* first = moves.begin();
+        Move* last = moves.end();
+        const int n = int(last - first);
+        if (n <= 1) return;
+
+        // MoveList max is 218 in your code
+        std::array<ScoredMove, 218> scored;
+
+        for (int i = 0; i < n; ++i) {
+            const Move m = first[i];
+            scored[i] = { scoreMove<Us>(m, ttMove), m };
         }
 
-        std::vector<std::pair<int, Move>> scored;
-        scored.reserve(moves.size());
+        std::sort(scored.begin(), scored.begin() + n,
+            [](const ScoredMove& a, const ScoredMove& b) {
+                return a.score > b.score;
+            });
 
-        for (const Move m : moves) {
-            int s = 0;
-
-            if (use_tt && m == ttMove) s += 1'000'000;
-
-            if (m.is_promotion()) s += 200'000;
-            if (m.is_capture())   s += 100'000;
-            if (m.flags() != QUIET) s += 10'000;
-
-            scored.emplace_back(s, m);
-        }
-
-        std::stable_sort(scored.begin(), scored.end(),
-            [](const auto& a, const auto& b) { return a.first > b.first; });
-
-        Move* out = moves.begin();
-        for (const auto& sm : scored) {
-            *out++ = sm.second;
-        }
+        for (int i = 0; i < n; ++i)
+            first[i] = scored[i].move;
     }
 
-}
-
+} // namespace bq
