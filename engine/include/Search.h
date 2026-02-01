@@ -125,7 +125,7 @@ namespace bq {
 		}
 
 		template <Color us>
-		SearchStats initiateIterativeSearch(Position& p, int depth)
+		SearchStats initiateIterativeSearch(Position& p, int depth) 
 		{
 			m_searchStats.reset();
 			m_stopping = false;
@@ -140,8 +140,8 @@ namespace bq {
 
 	private:
 
-		template <Color us>
-		void initiateSearch(Position& p, int depth)
+		template <Color us> 
+		void initiateSearch(Position& p, int depth) 
 		{
 			auto start = std::chrono::steady_clock::now();
 
@@ -172,7 +172,7 @@ namespace bq {
 		}
 
 		template <Color us>
-		int quiescence(Position& p, int ply, int q_depth, int alpha, int beta)
+		int quiescence(Position& p, int ply, int q_depth, int alpha, int beta) 
 		{
 			auto& stats = m_searchStats;
 			++stats.nodesSearched;
@@ -270,7 +270,7 @@ namespace bq {
 
 
 		template <Color us>
-		int pvs(Position& p, int ply, int depth, int alpha, int beta, bool reduced)
+		int pvs(Position& p, int ply, int depth, int alpha, int beta, bool reduced) 
 		{
 			auto& stats = m_searchStats;
 			stats.nodesSearched++;
@@ -278,15 +278,19 @@ namespace bq {
 				return alpha;
 			}
 
-			const int orig_alpha = alpha;
-			const int orig_beta = beta;
+			
 
 			if (depth <= 0)
 				return quiescence<us>(p, ply, 0, alpha, beta);
 
 
+			const int orig_alpha = alpha;
+			const int orig_beta = beta;
 
-			auto tt_lookup = m_transpositionTable.lookup(p.get_hash());
+
+			const std::uint64_t key = p.get_hash();
+
+			auto tt_lookup = m_transpositionTable.lookup(key);
 
 			if (tt_lookup.valid && tt_lookup.depth >= depth)
 			{
@@ -338,15 +342,17 @@ namespace bq {
 			bool haveBest = false;
 			int bestScore = -m_checkmateScore - 1;
 			Move bestMove{};
-			const std::uint64_t key = p.get_hash();
+			
 			int moveNum = 0;
 			for (Move& move : moves)
 			{
 				p.play<us>(move);
 
 				int move_reduct = 0;
-				if (!pvNode && moveNum > 3 && moves.size() >= 4 && depth >= 3 && !reduced && !move.is_capture())
+				// const int moveCount = int(moves.size()); // if you need it
+				if (!pvNode && moveNum > 3 && depth >= 3 && !reduced && !move.is_capture())
 					move_reduct = 1;
+
 
 				int score = 0;
 
