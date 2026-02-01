@@ -1,4 +1,4 @@
-#pragma once
+ï»¿#pragma once
 
 #include <algorithm>
 #include <atomic>
@@ -7,37 +7,36 @@
 #include <thread>
 #include <string>
 #include <vector>
-#include <cstdio>    // snprintf
+#include <cstdio>   
 #include <cstdint>
+#include <mutex>
+#include <condition_variable>
 #include "surge.h"
 #include "Search.h"
 #include "Logger.h"
-
+#include "Book.h"
 namespace bq {
 
     struct TimeControl {
-        // All times in microseconds (to match your stats.ellapsedTime)
         long long wtimeUs = 0;
         long long btimeUs = 0;
         long long wincUs = 0;
         long long bincUs = 0;
-
-        // Optional (0 = unknown). If provided, budgeting is much better.
         int movestogo = 0;
     };
 
     class ChessAi {
         Color m_us;
         bq::Search m_search;
-
+        bq::Book m_book;
         int m_maxDepth = 64;
-        long long m_overheadUs = 5'000;      // safety margin so you don't flag
-        long long m_minBudgetUs = 2'000;     // don't bother below ~2ms
-        long long m_maxFrac = 3;             // clamp spend to <= timeUs / m_maxFrac
+        long long m_overheadUs = 5'000;
+        long long m_minBudgetUs = 2'000;
+        long long m_maxFrac = 3;
 
     public:
         explicit ChessAi(Color us, int maxSelDepth = 50)
-            : m_us(us), m_search(maxSelDepth) {
+            : m_us(us), m_search(maxSelDepth),m_book("res/books/mainbook.txt") {
         }
 
         void setColor(Color us) { m_us = us; }
@@ -48,49 +47,75 @@ namespace bq {
 
         // Primary API
         inline Move think(Position& p, const TimeControl& tc) {
+
+            Move bookMove;
+            if (m_us == WHITE) {
+                bookMove = m_book.getBookMove<WHITE>(p);
+            }
+            else{
+                bookMove = m_book.getBookMove<BLACK>(p);
+            }
+            if (!bookMove.is_null()) {
+                bq::SearchStats stats{};
+                stats.depth = 0;
+                stats.ellapsedTime = 0;
+                stats.mateFound = false;
+                stats.nodesSearched = 0;
+                stats.qDepthReached = 0;
+                stats.score = 0;
+                stats.selectedMove = bookMove;
+                logStats(stats);
+                return bookMove;
+            }
             const long long budgetUs = computeBudgetUs(tc);
 
-            // Timer thread -> cooperative stop
-            std::thread timer([this, budgetUs]() {
+            std::mutex mx;
+            std::condition_variable cv;
+            bool done = false;
+
+            std::thread timer([&] {
                 if (budgetUs <= 0) {
                     m_search.signalStop();
                     return;
                 }
-                std::this_thread::sleep_for(std::chrono::microseconds(budgetUs));
-                m_search.signalStop();
+                std::unique_lock<std::mutex> lk(mx);
+                if (!cv.wait_for(lk, std::chrono::microseconds(budgetUs), [&] { return done; })) {
+                    m_search.signalStop();
+                }
                 });
 
             bq::SearchStats stats{};
             if (m_us == WHITE) stats = m_search.initiateIterativeSearch<WHITE>(p, m_maxDepth);
             else              stats = m_search.initiateIterativeSearch<BLACK>(p, m_maxDepth);
 
+            {
+                std::lock_guard<std::mutex> lk(mx);
+                done = true;
+            }
+            cv.notify_one();
             timer.join();
 
             logStats(stats);
-
-            // Fallback: if search returns default move, pick first legal (if any)
-            if (!isLegalSelectedMove(p, stats.selectedMove)) {
-                Move fallback{};
-                if (pickFirstLegal(p, fallback)) {
-                    bq::Logger::Info("Search returned invalid/default move; using fallback: {}", fallback.str());
-                    return fallback;
-                }
-            }
-
             return stats.selectedMove;
         }
 
-        // Convenience overload: "fixed time per move"
         inline Move thinkFixedTime(Position& p, long long budgetUs) {
             TimeControl tc{};
-            // We'll treat this as "we have exactly budgetUs available"
             if (m_us == WHITE) tc.wtimeUs = budgetUs;
-            else              tc.btimeUs = budgetUs;
+            else               tc.btimeUs = budgetUs;
             tc.movestogo = 1;
             setOverheadUs(0);
             return think(p, tc);
         }
-
+        inline void resetBook() {
+            m_book.Reset();
+        }
+        inline void stop() {
+            m_search.signalStop();
+        }
+        inline void addBookMove(Move move) {
+            m_book.addMove(move);
+        }
     private:
         inline long long computeBudgetUs(const TimeControl& tc) const {
             long long timeUs = (m_us == WHITE) ? tc.wtimeUs : tc.btimeUs;
@@ -103,19 +128,15 @@ namespace bq {
 
             if (tc.movestogo > 0) {
                 const int mtg = std::max(1, tc.movestogo);
-                // Spend ~1/(mtg+3) of remaining + half increment
                 budget = (timeUs / (mtg + 3)) + (incUs / 2);
             }
             else {
-                // Unknown moves-to-go: ~3.3% of remaining + half increment
                 budget = (timeUs / 30) + (incUs / 2);
             }
 
-            // Clamp
             if (m_maxFrac > 0) budget = std::min(budget, timeUs / m_maxFrac);
             budget = std::max(budget, m_minBudgetUs);
 
-            // Apply overhead
             budget = std::max(0LL, budget - m_overheadUs);
 
             return budget;
@@ -153,7 +174,6 @@ namespace bq {
                 return s.substr(0, w - 3) + "...";
                 };
 
-            // ---- compute values ----
             const long long us = s.ellapsedTime;
             const long long ms = us / 1000;
 
@@ -168,14 +188,13 @@ namespace bq {
 
             const char* unit = s.mateFound ? "mate" : "cp";
 
-            // ---- fixed column widths (tweak to taste) ----
-            // Three columns, consistent widths every print.
-            constexpr std::size_t W1 = 18; // depth/nodes
-            constexpr std::size_t W2 = 22; // score/nps
-            constexpr std::size_t W3 = 28; // time/best
+            constexpr std::size_t W1 = 18;
+            constexpr std::size_t W2 = 22;
+            constexpr std::size_t W3 = 28;
 
-            // Build fields
             std::string f1a = "depth: " + std::to_string(s.depth);
+            if (s.depth == 0) f1a = "depth: 0(book)";
+
             std::string f2a = std::string("score: ") + scoreBuf + " " + unit;
             std::string f3a = "time: " + std::to_string(ms) + "ms";
 
@@ -183,7 +202,6 @@ namespace bq {
             std::string f2b = std::string("nps: ") + mnpsBuf + " Mnps";
             std::string f3b = std::string("best: ") + s.selectedMove.str() + (s.mateFound ? " [MATE]" : "");
 
-            // Truncate then pad so widths are stable
             f1a = padR(trunc(f1a, W1), W1);
             f2a = padR(trunc(f2a, W2), W2);
             f3a = padR(trunc(f3a, W3), W3);
@@ -199,8 +217,8 @@ namespace bq {
             std::string r1 = row(f1a, f2a, f3a);
             std::string r2 = row(f1b, f2b, f3b);
 
-            // Box width is derived from row length, so borders always match
             const std::size_t innerW = r1.size();
+
             auto border = [&](char L, char M, char R) {
                 std::string b;
                 b += L;
@@ -208,15 +226,49 @@ namespace bq {
                 b += R;
                 return b;
                 };
+
             auto line = [&](const std::string& inner) {
-                return std::string("| ") + inner + " |";
+                return std::string("| ") + padR(inner, innerW) + " |";
                 };
+
+            std::vector<std::string> pvLines;
+            if (s.pvLen <= 0) {
+                pvLines.push_back("pv: (none)");
+            }
+            else {
+                const std::string prefix = "pv: ";
+                const std::string indent(prefix.size(), ' ');
+
+                std::string cur = prefix;
+                for (int i = 0; i < s.pvLen; ++i) {
+                    std::string tok = s.pv[i].str();
+                    if (tok.empty()) continue;
+
+                    std::size_t extra = (cur.size() > prefix.size() ? 1 : 0) + tok.size();
+
+                    if (cur.size() + extra > innerW) {
+                        pvLines.push_back(cur);
+                        cur = indent + tok;
+                    }
+                    else {
+                        if (cur.size() > prefix.size()) cur.push_back(' ');
+                        cur += tok;
+                    }
+                }
+                if (!cur.empty()) pvLines.push_back(cur);
+            }
 
             bq::Logger::Info("{}", border('+', '-', '+'));
             bq::Logger::Info("{}", line(r1));
             bq::Logger::Info("{}", line(r2));
+
+            for (auto& pl : pvLines) {
+                bq::Logger::Info("{}", line(trunc(pl, innerW)));
+            }
+
             bq::Logger::Info("{}", border('+', '-', '+'));
         }
+
 
         template <Color Us>
         inline bool isLegalMoveFor(Position& p, Move m) const {
@@ -226,8 +278,6 @@ namespace bq {
         }
 
         inline bool isLegalSelectedMove(Position& p, Move m) const {
-            // We don’t know side-to-move in Position API here reliably; use our AI color assumption.
-            // If AI might be asked to think from either side depending on p, you can infer from p.side_to_move().
             if (m_us == WHITE) return isLegalMoveFor<WHITE>(p, m);
             else              return isLegalMoveFor<BLACK>(p, m);
         }
@@ -246,6 +296,7 @@ namespace bq {
                 return true;
             }
         }
+        
     };
 
-} // namespace bq
+}

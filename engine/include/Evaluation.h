@@ -15,47 +15,24 @@ namespace bq {
             const Bitboard usBB = pos.all_pieces<Us>();
             const Bitboard thBB = pos.all_pieces<Them>();
 
-            // Phase for tapering
             const int phase = ComputePhase(pos);
 
             int mg = 0;
             int eg = 0;
 
-            // Material
             AddMaterial<Us>(pos, mg, eg);
-
-            // PST
             AddPieceSquareTables<Us>(pos, mg, eg);
-
-            // Mobility
             AddMobility<Us>(pos, occ, usBB, thBB, mg, eg);
-
-            // Pawn structure
             AddPawnStructure<Us>(pos, mg, eg);
-
-            // Bishop pair
             AddBishopPair<Us>(pos, mg, eg);
-
-            // Rook file/7th rank bonuses
             AddRookTerms<Us>(pos, mg, eg);
-
-            // King safety (mostly MG)
             AddKingSafety<Us>(pos, occ, mg);
-
-            // Check status (tiny)
             AddCheckStatus<Us>(pos, mg);
-
-            // Tempo (side-to-move relative, because Us = side being evaluated in search)
             mg += (pos.turn() == Us) ? 10 : -10;
-
-            // Taper MG/EG
             return Blend(mg, eg, phase);
         }
 
     private:
-        // ----------------------------
-        // Basic small helpers
-        // ----------------------------
         static constexpr int MirrorSq(int sq) { return sq ^ 56; } // rank flip
 
         static int Pst(const int* table, Color c, int sq) {
@@ -70,8 +47,7 @@ namespace bq {
                 : pos.attackers_from<BLACK>(s, occ);
         }
 
-        static int Blend(int mg, int eg, int phase /*0..24*/) {
-            // phase=24 => pure MG, phase=0 => pure EG
+        static int Blend(int mg, int eg, int phase) {
             return (mg * phase + eg * (24 - phase)) / 24;
         }
 
@@ -88,9 +64,6 @@ namespace bq {
             return phase;
         }
 
-        // ----------------------------
-        // Evaluation terms
-        // ----------------------------
         template <Color Us>
         static void AddMaterial(const Position& pos, int& mg, int& eg) {
             constexpr Color Them = ~Us;
@@ -111,7 +84,6 @@ namespace bq {
         static void AddPieceSquareTables(const Position& pos, int& mg, int& eg) {
             constexpr Color Them = ~Us;
 
-            // --- PST tables (as you had them) ---
             static constexpr int MG_PAWN[64] = {
                  0,  0,  0,  0,  0,  0,  0,  0,
                 10, 10, 10,-10,-10, 10, 10, 10,
@@ -258,7 +230,6 @@ namespace bq {
             AddPst(Us, QUEEN, MG_QUEEN, EG_QUEEN, +1);
             AddPst(Them, QUEEN, MG_QUEEN, EG_QUEEN, -1);
 
-            // Kings via bsf
             {
                 int usK = int(bsf(pos.bitboard_of(Us, KING)));
                 int thK = int(bsf(pos.bitboard_of(Them, KING)));
@@ -384,7 +355,6 @@ namespace bq {
                 }
                 };
 
-            // our pawns are +, their pawns are -
             EvalPawnSide(Us, usP, usFileCnt, +1);
             EvalPawnSide(Them, thP, thFileCnt, -1);
         }
@@ -486,8 +456,8 @@ namespace bq {
             constexpr Color Them = ~Us;
 
             if (pos.in_check<Us>())   mg -= 20;
-            if (pos.in_check<Them>()) mg += 20; // keep if your in_check<side> is "king attacked right now"
+            if (pos.in_check<Them>()) mg += 20;
         }
     };
 
-} // namespace bq
+}

@@ -1,26 +1,27 @@
 #pragma once
-
 #include <cstdint>
 #include <vector>
 
-#include "surge.h" // Move
-namespace bq
-{
-    enum class tt_flag : std::uint8_t {
-        EXACT,
-        UPPERBOUND,
-        LOWERBOUND
-    };
+#if defined(_MSC_VER) && defined(_M_X64)
+#include <intrin.h> // _umul128
+#endif
+
+#include "surge.h"
+
+namespace bq {
+
+    enum class tt_flag : std::uint8_t { EXACT, UPPERBOUND, LOWERBOUND };
 
     struct tt_entry {
         int depth = -1;
         int score = 0;
         tt_flag flag = tt_flag::EXACT;
         bool valid = false;
-        Move bestMove{}; // NEW
+        Move bestMove{};
     };
 
     class TranspositionTable {
+    public:
         struct Slot {
             std::uint64_t key = 0;
             tt_entry entry{};
@@ -31,21 +32,49 @@ namespace bq
             Slot b{};
         };
 
-        Move m_topMove{};
+    private:
         std::vector<Bucket> m_buckets{};
-        std::size_t m_mask = 0;
+        Move m_topMove{};
+        static constexpr std::size_t kMinBuckets = 2;
+
+        static inline std::size_t fastIndex(std::uint64_t h, std::size_t n) {
+#if defined(_MSC_VER) && defined(_M_X64)
+            // index = (h * n) >> 64
+            unsigned __int64 hi = 0;
+            _umul128((unsigned __int64)h, (unsigned __int64)n, &hi);
+            return (std::size_t)hi;
+#elif defined(__SIZEOF_INT128__)
+            return (std::size_t)(((__uint128_t)h * (__uint128_t)n) >> 64);
+#else
+            return (std::size_t)(h % n);
+#endif
+        }
+
+        std::size_t indexOf(std::uint64_t hash) const {
+            return fastIndex(hash, m_buckets.size());
+        }
 
     public:
-        static constexpr std::size_t MAX_TT_SIZE = 44'800'000; // approximate number of entries desired
+        static constexpr std::size_t defaultSizeMb = 1024;
 
-        TranspositionTable() { resize(MAX_TT_SIZE); }
-        explicit TranspositionTable(std::size_t entries) { resize(entries); }
+        TranspositionTable() { resizeMB(defaultSizeMb); }
+        explicit TranspositionTable(std::size_t sizeMb) { resizeMB(sizeMb); }
 
-        size_t BucketCount() const { return m_buckets.size(); }
-        size_t BucketIndex(uint64_t hash) const { return size_t(hash) & (m_buckets.size() - 1); }
+        void resizeMB(std::size_t mb) {
+            const std::size_t bytes = mb * 1024ULL * 1024ULL;
+            std::size_t buckets = bytes / sizeof(Bucket);
+            if (buckets < kMinBuckets) buckets = kMinBuckets;
+            m_buckets.assign(buckets, Bucket{});
+        }
 
-        void clear()
-        {
+        std::size_t bucketCount() const { return m_buckets.size(); }
+        std::size_t approxEntryCapacity() const { return m_buckets.size() * 2; }
+
+        // NOTE: now this is the TRUE bucket index (not mask-based)
+        std::size_t BucketIndex(std::uint64_t hash) const { return indexOf(hash); }
+        std::size_t BucketCount() const { return m_buckets.size(); }
+
+        void clear() {
             for (auto& bk : m_buckets) {
                 bk.a = Slot{};
                 bk.b = Slot{};
@@ -53,13 +82,11 @@ namespace bq
             m_topMove = Move{};
         }
 
-        void insert(std::uint64_t hash, const tt_entry& newEntry)
-        {
+        void insert(std::uint64_t hash, const tt_entry& newEntry) {
             if (!newEntry.valid) return;
 
             Bucket& bk = m_buckets[indexOf(hash)];
 
-            // 1) If key already exists in either slot, replace if deeper/equal
             if (bk.a.entry.valid && bk.a.key == hash) {
                 if (newEntry.depth >= bk.a.entry.depth) bk.a.entry = newEntry;
                 return;
@@ -69,93 +96,33 @@ namespace bq
                 return;
             }
 
-            // 2) Empty slot? Use it.
-            if (!bk.a.entry.valid) {
-                bk.a.key = hash;
-                bk.a.entry = newEntry;
-                return;
-            }
-            if (!bk.b.entry.valid) {
-                bk.b.key = hash;
-                bk.b.entry = newEntry;
-                return;
-            }
+            if (!bk.a.entry.valid) { bk.a.key = hash; bk.a.entry = newEntry; return; }
+            if (!bk.b.entry.valid) { bk.b.key = hash; bk.b.entry = newEntry; return; }
 
-            // 3) Collision: choose a victim.
-            // Simple and effective: replace the shallower entry.
-            // If equal depth, prefer replacing a non-EXACT entry first.
-            Slot* victim = pickVictim(bk, newEntry);
-
+            Slot* victim = pickVictim(bk);
             victim->key = hash;
             victim->entry = newEntry;
         }
 
-        tt_entry lookup(std::uint64_t hash) const
-        {
+        tt_entry lookup(std::uint64_t hash) const {
             const Bucket& bk = m_buckets[indexOf(hash)];
-
             if (bk.a.entry.valid && bk.a.key == hash) return bk.a.entry;
             if (bk.b.entry.valid && bk.b.key == hash) return bk.b.entry;
-
-            return tt_entry{}; // invalid
+            return tt_entry{};
         }
 
         void setTopMove(Move m) { m_topMove = m; }
         Move selectedMove() const { return m_topMove; }
 
-        std::size_t bucketCount() const { return m_buckets.size(); }
-        std::size_t approxEntryCapacity() const { return m_buckets.size() * 2; }
-
     private:
-        static std::size_t nextPow2(std::size_t x)
-        {
-            if (x < 2) return 2;
-            --x;
-            x |= x >> 1;
-            x |= x >> 2;
-            x |= x >> 4;
-            x |= x >> 8;
-            x |= x >> 16;
-            if constexpr (sizeof(std::size_t) == 8) x |= x >> 32;
-            return x + 1;
-        }
-
-        void resize(std::size_t desiredEntries)
-        {
-            // 2-way: buckets = desiredEntries/2
-            std::size_t desiredBuckets = (desiredEntries + 1) / 2;
-            std::size_t bucketCap = nextPow2(desiredBuckets);
-
-            m_buckets.assign(bucketCap, Bucket{});
-            m_mask = bucketCap - 1;
-        }
-
-        std::size_t indexOf(std::uint64_t hash) const
-        {
-            return static_cast<std::size_t>(hash) & m_mask;
-        }
-
-        static Slot* pickVictim(Bucket& bk, const tt_entry& incoming)
-        {
-            // Replace shallower depth
-            if (bk.a.entry.depth != bk.b.entry.depth) {
+        static Slot* pickVictim(Bucket& bk) {
+            if (bk.a.entry.depth != bk.b.entry.depth)
                 return (bk.a.entry.depth < bk.b.entry.depth) ? &bk.a : &bk.b;
-            }
 
-            // Same depth: prefer replacing non-EXACT to keep strong info
-            auto isExact = [](const Slot& s) { return s.entry.flag == tt_flag::EXACT; };
+            const bool aExact = (bk.a.entry.flag == tt_flag::EXACT);
+            const bool bExact = (bk.b.entry.flag == tt_flag::EXACT);
+            if (aExact != bExact) return aExact ? &bk.b : &bk.a;
 
-            const bool aExact = isExact(bk.a);
-            const bool bExact = isExact(bk.b);
-
-            if (aExact != bExact) {
-                return aExact ? &bk.b : &bk.a;
-            }
-
-            // Same depth and both exactness same:
-            // Replace one deterministically (or you could use hash bit to choose).
-            // Using incoming depth doesn't help here; deterministic is fine.
-            (void)incoming;
             return &bk.a;
         }
     };

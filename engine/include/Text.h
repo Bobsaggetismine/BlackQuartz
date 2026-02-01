@@ -21,9 +21,7 @@ namespace bq::text {
     {
         auto is_ws = [](unsigned char c) { return std::isspace(c); };
 
-        // ltrim
         while (!s.empty() && is_ws((unsigned char)s.front())) s.erase(s.begin());
-        // rtrim
         while (!s.empty() && is_ws((unsigned char)s.back())) s.pop_back();
     }
 }

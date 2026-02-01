@@ -3,8 +3,8 @@
 #include <vector>
 #include <cstdint>
 
-#include "surge.h"   // Position, Move, MoveList, Color, flags, etc.
-#include "TranspositionTable.h" // your new bq::TranspositionTable (adjust include)
+#include "surge.h"
+#include "TranspositionTable.h"
 
 namespace bq {
 
@@ -13,19 +13,14 @@ namespace bq {
     {
         int score = 0;
 
-        // 1) TT move always first (if enabled)
         if (use_tt && m == ttMove)
             score += 1'000'000;
 
-        // 2) Captures / promotions / other tactical-ish moves
         if (m.is_capture())
             score += 100'000;
 
-        // If you have promotion flags in Surge, bonus them.
-        // This keeps it generic: anything non-quiet gets a small bump.
         if (m.flags() != QUIET)
             score += 10'000;
-
 
         return score;
     }
@@ -45,10 +40,8 @@ namespace bq {
         for (const Move m : moves) {
             int s = 0;
 
-            // TT move first
             if (use_tt && m == ttMove) s += 1'000'000;
 
-            // Basic tactical ordering
             if (m.is_promotion()) s += 200'000;
             if (m.is_capture())   s += 100'000;
             if (m.flags() != QUIET) s += 10'000;
@@ -59,12 +52,11 @@ namespace bq {
         std::stable_sort(scored.begin(), scored.end(),
             [](const auto& a, const auto& b) { return a.first > b.first; });
 
-        // Write back into MoveList using its raw buffer
         Move* out = moves.begin();
         for (const auto& sm : scored) {
             *out++ = sm.second;
         }
     }
 
-} // namespace bq
+}
 

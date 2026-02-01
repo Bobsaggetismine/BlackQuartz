@@ -125,16 +125,16 @@ TEST_CASE("TestHistoryMismatchReturnsNull")
 	bq::Book book("res/books/testbook.txt");
 	Position p("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1");
 
-	Move bogus("a2a3"); // assuming your testbook starts with e2e4
+	Move bogus("a2a3");
 	book.addMove(bogus);
 	p.play<WHITE>(bogus);
 
 	Move m = book.getBookMove<BLACK>(p);
-	CHECK(m.is_null()); // or m == Move("a1a1") if that's your sentinel
+	CHECK(m.is_null());
 }
 TEST_CASE("TestReturnsOneOfCandidates")
 {
-	bq::Book book("res/books/testbook_twocandidates.txt"); // create this
+	bq::Book book("res/books/testbook_twocandidates.txt");
 	Position p("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1");
 
 	Move m = book.getBookMove<WHITE>(p);

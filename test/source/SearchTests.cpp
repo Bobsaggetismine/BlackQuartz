@@ -5,7 +5,7 @@
 
 #include "surge.h"
 #include "Search.h"      
-
+#include "Logger.h"
 namespace {
 
     template <Color Us>
@@ -61,15 +61,14 @@ TEST_CASE("Search: nodes generally increase with depth (startpos sanity)") {
 
 TEST_CASE("Search: mate-in-1 results in checkmate") {
     bq::Search search(50);
-    Position p("7k/5Q2/7K/8/8/8/8/8 w - - 0 1");
+    Position p("r3kb1r/ppp1pppp/5n2/1n3P2/6bP/4K3/PPq5/RNB2q2 b kq - 0 13");
 
-    auto stats = search.initiateIterativeSearch<WHITE>(p, 3);
+    auto stats = search.initiateIterativeSearch<BLACK>(p, 7);
+    CHECK(is_legal_move<BLACK>(p, stats.selectedMove));
 
-    CHECK(is_legal_move<WHITE>(p, stats.selectedMove));
-
-    p.play<WHITE>(stats.selectedMove);
-    CHECK(is_checkmated<BLACK>(p));
-    p.undo<WHITE>(stats.selectedMove);
+    p.play<BLACK>(stats.selectedMove);
+    CHECK(is_checkmated<WHITE>(p));
+    p.undo<BLACK>(stats.selectedMove);
 }
 
 TEST_CASE("Search: qsearch in-check does not stand-pat (sanity)") {

@@ -16,7 +16,7 @@
 #endif
 #include <Windows.h>
 #elif defined(PLATFORM_LINUX)
-#include <unistd.h> // isatty, fileno
+#include <unistd.h>
 #endif
 
 namespace bq {
@@ -41,7 +41,9 @@ namespace bq {
             ofs().open(file, mode);
             file_enabled() = ofs().is_open();
         }
-
+        static void stopConsoleLogging() {
+            console_enabled() = false;
+        }
         static void stopFileLogging() {
             std::scoped_lock lk(mu());
             if (ofs().is_open()) ofs().close();
@@ -84,21 +86,19 @@ namespace bq {
     private:
         struct color {
 #if defined(PLATFORM_WINDOWS)
-            // Windows console attributes
-            static constexpr int trace = 8;   // gray
-            static constexpr int debug = 11;  // cyan-ish
-            static constexpr int info = 10;  // green
-            static constexpr int warn = 14;  // yellow
-            static constexpr int critical = 12;  // red
-            static constexpr int normal = 7;   // default
+            static constexpr int trace = 8;
+            static constexpr int debug = 11;
+            static constexpr int info = 10;
+            static constexpr int warn = 14;
+            static constexpr int critical = 12;
+            static constexpr int normal = 7;
 #else
-            // Values used only for mapping to ANSI in set_console_color()
-            static constexpr int trace = 90;  // bright black (gray)
-            static constexpr int debug = 36;  // cyan
-            static constexpr int info = 32;  // green
-            static constexpr int warn = 33;  // yellow
-            static constexpr int critical = 31;  // red
-            static constexpr int normal = 0;   // reset
+            static constexpr int trace = 90;
+            static constexpr int debug = 36;
+            static constexpr int info = 32;
+            static constexpr int warn = 33;
+            static constexpr int critical = 31;
+            static constexpr int normal = 0;
 #endif
         };
 
@@ -109,6 +109,10 @@ namespace bq {
         static inline std::ofstream& ofs() {
             static std::ofstream f;
             return f;
+        }
+        static inline bool& console_enabled() {
+            static bool c = true;
+            return c;
         }
         static inline bool& file_enabled() {
             static bool b = false;
@@ -140,7 +144,6 @@ namespace bq {
 #if defined(PLATFORM_LINUX)
             return ::isatty(::fileno(stderr));
 #else
-            // Best-effort: on Windows, SetConsoleTextAttribute is harmless if not a console.
             return true;
 #endif
         }
@@ -151,7 +154,6 @@ namespace bq {
             SetConsoleTextAttribute(h, (WORD)c);
 #elif defined(PLATFORM_LINUX)
             if (!stderr_is_tty()) return;
-            // ANSI: \033[<code>m
             std::fputs(std::format("\033[{}m", c).c_str(), stderr);
 #else
             (void)c;
@@ -182,20 +184,19 @@ namespace bq {
             const auto ts = timestamp_now();
             const auto tid = std::hash<std::thread::id>{}(std::this_thread::get_id());
             const std::string body = std::format(fmt, std::forward<Args>(args)...);
-
-            // Console -> stderr (keeps UCI stdout clean)
-            set_console_color(col);
-            std::println(stderr, "[{}][{}][{:x}] {}", ts, tag, tid, body);
-            reset_console_color();
+            if (console_enabled()) {
+                set_console_color(col);
+                std::println(stderr, "[{}][{}][{:x}] {}", ts, tag, tid, body);
+                reset_console_color();
+            }
 
             // File
             if (file_enabled() && ofs().is_open()) {
                 ofs() << '[' << ts << "][" << tag << "][" << std::hex << tid << std::dec << "] "
                     << body << '\n';
-                // Remove flush if you want max speed; keep if you want crash-resilient logs.
                 ofs().flush();
             }
         }
     };
 
-} // namespace bq
+}

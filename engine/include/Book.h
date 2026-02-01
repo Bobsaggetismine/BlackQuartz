@@ -12,11 +12,10 @@ namespace bq {
     
     struct GameEntry {
         std::vector<std::string> moves;
-        int result; // 1 = white win, -1 = black win, 0 = draw
+        int result;
     };
     
     class Book {
-
         std::vector<Move> m_MoveHistory;
         std::vector<GameEntry> m_Games;
         std::string m_Delimeter = "\n";
@@ -38,9 +37,12 @@ namespace bq {
         template <Color Us>
         Move getBookMove(Position& p)
         {
+            if ((p.fen() != "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq -") && (m_MoveHistory.size() == 0)) return Move();
+            std::string holder;
+            for (Move m : m_MoveHistory) {
+                holder += " m: " + m.str() + " ";
+            }
             for (auto& game : m_Games) {
-
-                // only use games where "our side" won
                 if constexpr (Us == WHITE) {
                     if (game.result != 1) continue;
                 }
@@ -49,7 +51,7 @@ namespace bq {
                 }
 
                 if (m_MoveHistory.size() >= game.moves.size()) continue;
-
+                
                 bool match = true;
                 for (size_t i = 0; i < m_MoveHistory.size(); ++i) {
                     if (m_MoveHistory[i].str() != game.moves[i]) {
@@ -68,7 +70,7 @@ namespace bq {
                 }
             }
 
-            return Move(); // null
+            return Move();
         }
     
         
